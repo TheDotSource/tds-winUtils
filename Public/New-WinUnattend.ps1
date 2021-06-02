@@ -1,4 +1,4 @@
-function New-WinUnattend {
+﻿function New-WinUnattend {
     <#
     .SYNOPSIS
         Generate an autounattend file for Windows installation with some basic parameters.
@@ -7,12 +7,20 @@ function New-WinUnattend {
         Generate an autounattend file for Windows installation with some basic parameters.
 
         These are:
-            * Image name
+            * Image index
             * Computer name
             * Product key
             * Local administrator credential
 
         Applies a basic partition laytout suitable for UEFI systems.
+
+        Image Index can be determined by using Get-WindowsImage or various other methods.
+
+        IP configuration is applied to the first adapter found on the system.
+
+        Product key can be omiited but this will result in installation failure unless evaluation media is used.
+
+        The unattend will also execute some PowerShell commands at first login to configure the Windows Firewall to allow PowerShell remoting.
 
     .PARAMETER targetFile
         The output autounattend.xml file location.
@@ -22,6 +30,18 @@ function New-WinUnattend {
 
     .PARAMETER productKey
         Optional. The product key to use during installation. Can be omitted if using Evaluation media.
+
+    .PARAMETER ip
+        The IP address to assign.
+
+    .PARAMETER maskLength
+        Subnet mask length, for example, 24.
+
+    .PARAMETER maskLength
+        IP address of the DNS server to assign to the interface.
+
+    .PARAMETER gateway
+        IP address of the default gateway to assign to the interface.
 
     .PARAMETER computerName
         Optional. The computer name to apply during installation. If ommitted Windows will auto-generate one.
@@ -36,14 +56,9 @@ function New-WinUnattend {
         System.IO.FileInfo. The output autoUnattend file.
 
     .EXAMPLE
-        New-WinUnattend -targetFile C:\winBuil\autoUnattend.xml -imageName 'Windows Server 2019 Datacenter' -productKey "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" -computerName "WINTEST01" -adminCredential $creds
+        New-WinUnattend -targetFile D:\sample\autounattend.xml -imageIndex 1 -ip 10.10.1.100 -maskLength 24 -dns 10.10.1.10 -gateway 10.10.1.1 -computerName testdc01 -adminCredential $creds
 
-        Create autoUnattend.xml to install image "Windows Server 2019 Datacenter" with the spcified product key, computer name and local administrator credential.
-
-    .EXAMPLE
-        New-WinUnattend -targetFile C:\winBuil\autoUnattend.xml -imageName 'Windows Server 2019 Datacenter' -adminCredential $creds
-
-        Create autoUnattend.xml to install image "Windows Server 2019 Datacenter" with the specified local administrator credential. Auto-generate a computer name and do not apply a product key.
+        Create autoUnattend.xml to install image index 1 with the spcified product key, computer name, local administrator credential and IP configuration.
 
     .LINK
 
@@ -58,19 +73,17 @@ function New-WinUnattend {
         [parameter(Mandatory=$true,ValueFromPipeline=$false)]
         [string]$targetFile,
         [parameter(Mandatory=$true,ValueFromPipeline=$false)]
-        [ValidateSet(
-                    "Windows Server 2019 Standard Evaluation",
-                    "Windows Server 2019 Standard Evaluation (Desktop Experience)",
-                    "Windows Server 2019 Datacenter Evaluation",
-                    "Windows Server 2019 Datacenter Evaluation (Desktop Experience)",
-                    "Windows Server 2019 Standard",
-                    "Windows Server 2019 Standard (Desktop Experience)",
-                    "Windows Server 2019 Datacenter",
-                    "Windows Server 2019 Datacenter (Desktop Experience)"
-                    )]
-        [string]$imageName,
+        [int]$imageIndex,
         [parameter(Mandatory=$false,ValueFromPipeline=$false)]
         [string]$productKey,
+        [parameter(Mandatory=$true,ValueFromPipeline=$false)]
+        [string]$ip,
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
+        [string]$maskLength,
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
+        [string]$dns,
+        [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
+        [string]$gateway,
         [parameter(Mandatory=$false,ValueFromPipeline=$false)]
         [string]$computerName,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
@@ -89,20 +102,6 @@ function New-WinUnattend {
         $xmlTemp = @"
 <?xml version="1.0" encoding="utf-8"?>
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
-    <settings pass="specialize">
-        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-            <AutoLogon>
-                <Password>
-                    <Value>{4}</Value>
-                    <PlainText>true</PlainText>
-                </Password>
-                <Enabled>true</Enabled>
-                <LogonCount>2</LogonCount>
-                <Username>{3}</Username>
-            </AutoLogon>
-            <ComputerName>{2}</ComputerName>
-        </component>
-    </settings>
     <settings pass="windowsPE">
         <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <DiskConfiguration>
@@ -168,7 +167,7 @@ function New-WinUnattend {
                     <WillShowUI>Never</WillShowUI>
                     <InstallFrom>
                         <MetaData wcm:action="add">
-                            <Key>/IMAGE/NAME</Key>
+                            <Key>/IMAGE/INDEX</Key>
                             <Value>{0}</Value>
                         </MetaData>
                     </InstallFrom>
@@ -176,7 +175,7 @@ function New-WinUnattend {
             </ImageInstall>
             <UserData>
                 <ProductKey>
-                    <Key>{1}</Key>
+                    {1}
                     <WillShowUI>Never</WillShowUI>
                 </ProductKey>
                 <AcceptEula>true</AcceptEula>
@@ -188,6 +187,52 @@ function New-WinUnattend {
                 <UILanguage>en-us</UILanguage>
             </SetupUILanguage>
             <UILanguage>en-us</UILanguage>
+        </component>
+    </settings>
+    <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+        <UserAccounts>
+            <AdministratorPassword>
+                <Value>{4}</Value>
+                <PlainText>true</PlainText>
+            </AdministratorPassword>
+        </UserAccounts>
+        <AutoLogon>
+                <Password>
+                    <Value>{4}</Value>
+                    <PlainText>true</PlainText>
+                </Password>
+                <Enabled>true</Enabled>
+                <LogonCount>2</LogonCount>
+                <Username>{3}</Username>
+            </AutoLogon>
+            <FirstLogonCommands>
+            <SynchronousCommand wcm:action="add">
+                <CommandLine>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -Command "Get-NetAdapter | Select-Object -First 1 | New-NetIPAddress –IPAddress {5} –PrefixLength {6} -DefaultGateway {7}"</CommandLine>
+                <Order>1</Order>
+            </SynchronousCommand>
+            <SynchronousCommand wcm:action="add">
+                <CommandLine>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -Command "Get-NetAdapter | Select-Object -First 1 | Set-DnsClientServerAddress -ServerAddresses {8}"</CommandLine>
+                <Order>2</Order>
+            </SynchronousCommand>
+            <SynchronousCommand wcm:action="add">
+                <CommandLine>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -Command "Get-NetFirewallRule -Name FPS-ICMP4-ERQ-In | Enable-NetFirewallRule"</CommandLine>
+                <Order>3</Order>
+            </SynchronousCommand>
+            <SynchronousCommand wcm:action="add">
+                <CommandLine>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -Command "Get-NetFirewallRule -Name WMI-RPCSS-In-TCP | Enable-NetFirewallRule"</CommandLine>
+                <Order>4</Order>
+            </SynchronousCommand>
+            <SynchronousCommand wcm:action="add">
+                <CommandLine>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -Command "Get-NetFirewallRule -Name WMI-WINMGMT-In-TCP | Enable-NetFirewallRule"</CommandLine>
+                <Order>5</Order>
+            </SynchronousCommand>
+        </FirstLogonCommands>
+        </component>
+    </settings>
+    <settings pass="specialize">
+        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <ComputerName>{2}</ComputerName>
         </component>
     </settings>
 </unattend>
@@ -204,6 +249,9 @@ function New-WinUnattend {
         } # elseif
         else {
             Write-Verbose ("Product key appears to be valid.")
+
+            ## Form the string we need to inject to the XML
+            $productKey = ("<Key>" + $productKey + "</Key>")
         } # else
 
 
@@ -220,7 +268,7 @@ function New-WinUnattend {
         Write-Verbose ("Processing template values.")
 
         try {
-            $xmlTemp = $xmlTemp -f $imageName, $productKey, $computerName, $adminCredential.UserName, $adminCredential.GetNetworkCredential().Password
+            $xmlTemp = $xmlTemp -f $imageIndex, $productKey, $computerName, $adminCredential.UserName, $adminCredential.GetNetworkCredential().Password, $ip, $maskLength, $gateway, $dns
             Write-Verbose ("Completed.")
         } # try
         catch {
