@@ -10,6 +10,9 @@
             * Restart the remote system.
             * Wait for the Active Directory to become available.
 
+        Remote computer will need remote management enabled and approrriate firewall rules enabled.
+        Remote computer may also need to be added to local trusted hosts list.
+
     .PARAMETER hostName
         The remote Windows system to target.
 
@@ -29,6 +32,9 @@
         None.
 
     .EXAMPLE
+        New-activeDirectory -hostName LABDC01 -domainFQDN lab.local -domainNetbios LAB -Credential $creds
+
+        Install Active Directory to LABDC01 with the specified options.
 
     .LINK
 
@@ -52,9 +58,7 @@
 
 
     begin {
-
         Write-Verbose ("Function start.")
-
     } # begin
 
     process {
@@ -63,11 +67,10 @@
         Write-Verbose ("Creating remote PowerShell session to " + $hostName)
 
         try {
-            $psSession = New-PSSession -ComputerName $hostName -Credential $Credential
+            $psSession = New-PSSession -ComputerName $hostName -Credential $Credential -ErrorAction Stop
             Write-Verbose ("Remote session created.")
         } # try
         catch {
-            Write-Debug ("Failed to create remote session.")
             throw ("Failed to create remote PowerShell session." + $_.exception.message)
         } # catch
 
@@ -75,44 +78,44 @@
         ## Install ADDS Windows feature
         Write-Verbose ("Installing Active Directory binaries on remote system.")
 
-        try {
-            Install-WindowsFeature -Name AD-Domain-Services -ComputerName $hostName -Credential $Credential | Out-Null
-            Write-Verbose ("Binaries installed.")
-        } # try
-        catch {
-            Write-Debug ("Failed to install Active Directory binaries.")
-            throw ("Failed to install Active Directory binaries. " + $_.exception.message)
-        } # catch
+        if ($PSCmdlet.ShouldProcess($hostName)) {
+
+            try {
+                Install-WindowsFeature -Name AD-Domain-Services -ComputerName $hostName -Credential $Credential -ErrorAction Stop | Out-Null
+                Write-Verbose ("Binaries installed.")
+            } # try
+            catch {
+                throw ("Failed to install Active Directory binaries. " + $_.exception.message)
+            } # catch
 
 
-        ## Set script block for remote execution
-        $cmdText =
-        {
-        param($safeModePass,$domainFQDN,$domainNetbios)
+            ## Set script block for remote execution
+            $cmdText = {
+                param($safeModePass,$domainFQDN,$domainNetbios)
 
-        ## Disable progress bar for this remote session
-        $ProgressPreference = "SilentlyContinue"
+                ## Disable progress bar for this remote session
+                $ProgressPreference = "SilentlyContinue"
 
-        Install-ADDSForest -SafeModeAdministratorPassword $safeModePass -CreateDnsDelegation:$false -DatabasePath “C:\Windows\NTDS” -DomainMode “7” -DomainName $domainFQDN `
-        -DomainNetbiosName $domainNetbios -ForestMode “7” -InstallDns:$true -LogPath “C:\Windows\NTDS” -NoRebootOnCompletion:$false -SysvolPath “C:\Windows\SYSVOL” -Force:$true -WarningAction SilentlyContinue
-        }
+                Install-ADDSForest -SafeModeAdministratorPassword $safeModePass -CreateDnsDelegation:$false -DatabasePath “C:\Windows\NTDS” -DomainMode “7” -DomainName $domainFQDN `
+                -DomainNetbiosName $domainNetbios -ForestMode “7” -InstallDns:$true -LogPath “C:\Windows\NTDS” -NoRebootOnCompletion:$false -SysvolPath “C:\Windows\SYSVOL” -Force:$true -WarningAction SilentlyContinue
+            } # scriptblock
 
 
-        ## Execute command in remote session
-        Write-Verbose ("Beginning remote installation of Active Directory.")
+            ## Execute command in remote session
+            Write-Verbose ("Beginning remote installation of Active Directory.")
 
-        try {
-            $cmdResult = Invoke-Command -Session $psSession -ScriptBlock $cmdText -ArgumentList $Credential.password,$domainFQDN,$domainNetbios
-            Write-Verbose ("Installation complete.")
-        } # try
-        catch {
-            throw ("Failed to install ADDS. " + $_.exception.message)
-        } # catch
+            try {
+                $cmdResult = Invoke-Command -Session $psSession -ScriptBlock $cmdText -ArgumentList $Credential.password,$domainFQDN,$domainNetbios -ErrorAction Stop
+                Write-Verbose ("Installation complete.")
+            } # try
+            catch {
+                throw ("Failed to install ADDS. " + $_.exception.message)
+            } # catch
 
+        } # if
 
         ## Check that install status is successful
         if (!($cmdResult.status -eq "Success")) {
-
             throw ("Status returned by remote system was " + $cmdResult.status)
         } # if
 
@@ -157,7 +160,6 @@
     } # process
 
     end {
-
         Write-Verbose ("Function complete.")
     } # end
 

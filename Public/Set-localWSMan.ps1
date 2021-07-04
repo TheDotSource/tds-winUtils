@@ -5,7 +5,7 @@
 
     .DESCRIPTION
         Add a remote host as a trusted host on the local system.
-        Allows for PowerShell remoting in the absence of Active Directory.
+        Host will not be added if it is already on the trusted hosts list.
 
     .PARAMETER trustedHost
         Hostname or IP of the host to add.
@@ -28,14 +28,13 @@
 
     #>
 
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact="Low")]
     param(
         [Parameter(Mandatory=$true,ValueFromPipeline=$true)]
         [string]$trustedHost
     )
 
     begin {
-
         Write-Verbose ("Function start.")
     } # begin
 
@@ -50,7 +49,6 @@
             Write-Verbose ("Got trusted hosts list from local system.")
         } # try
         catch {
-            Write-Debug ("Failed to get local trusted hosts list.")
             throw ("Failed to get local trusted hosts list. " + $_.exception.message)
         } # catch
 
@@ -67,21 +65,21 @@
 
             Write-Verbose ("Adding host " + $trustedHost + " to trusted hosts list.")
 
-            try {
-                Set-WSManInstance -ResourceURI winrm/config/client -ValueSet @{TrustedHosts=$newHosts} -ErrorAction Stop | Out-Null
-                Write-Verbose ("Host added.")
-            } # try
-            catch {
-                Write-Debug ("Failed to add host to trusted hosts.")
-                throw ("Failed to add host to trusted hosts.")
-            } # catch
+            if ($PSCmdlet.ShouldProcess($trustedHost)) {
+                try {
+                    Set-WSManInstance -ResourceURI winrm/config/client -ValueSet @{TrustedHosts=$newHosts} -ErrorAction Stop | Out-Null
+                    Write-Verbose ("Host added.")
+                } # try
+                catch {
+                    throw ("Failed to add host to trusted hosts. " + $_.exception.message)
+                } # catch
+            } # if
 
         } # else
 
     } # process
 
     end {
-
         Write-Verbose ("Function complete.")
     } # end
 
