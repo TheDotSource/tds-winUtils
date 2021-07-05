@@ -80,21 +80,14 @@
 
         if ($PSCmdlet.ShouldProcess($hostName)) {
 
-            try {
-                Install-WindowsFeature -Name AD-Domain-Services -ComputerName $hostName -Credential $Credential -ErrorAction Stop | Out-Null
-                Write-Verbose ("Binaries installed.")
-            } # try
-            catch {
-                throw ("Failed to install Active Directory binaries. " + $_.exception.message)
-            } # catch
-
-
             ## Set script block for remote execution
             $cmdText = {
                 param($safeModePass,$domainFQDN,$domainNetbios)
 
                 ## Disable progress bar for this remote session
                 $ProgressPreference = "SilentlyContinue"
+
+                Install-WindowsFeature -Name AD-Domain-Services -ErrorAction Stop | Out-Null
 
                 Install-ADDSForest -SafeModeAdministratorPassword $safeModePass -CreateDnsDelegation:$false -DatabasePath “C:\Windows\NTDS” -DomainMode “7” -DomainName $domainFQDN `
                 -DomainNetbiosName $domainNetbios -ForestMode “7” -InstallDns:$true -LogPath “C:\Windows\NTDS” -NoRebootOnCompletion:$false -SysvolPath “C:\Windows\SYSVOL” -Force:$true -WarningAction SilentlyContinue
