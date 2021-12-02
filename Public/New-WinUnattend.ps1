@@ -46,6 +46,9 @@
     .PARAMETER computerName
         Optional. The computer name to apply during installation. If ommitted Windows will auto-generate one.
 
+    .PARAMETER matchTimeZone
+        Optional. Use the same time zone as the local system.
+
     .PARAMETER adminCredential
         The username and password for the local administratior account. Warning: passwords in autoUnattend files are NOT encrypted!
 
@@ -86,6 +89,8 @@
         [string]$gateway,
         [parameter(Mandatory=$false,ValueFromPipeline=$false)]
         [string]$computerName,
+        [parameter(Mandatory=$false,ValueFromPipeline=$false)]
+        [Switch]$matchTimeZone,
         [Parameter(Mandatory=$true,ValueFromPipeline=$false)]
         [System.Management.Automation.PSCredential]$adminCredential
       )
@@ -233,6 +238,13 @@
     <settings pass="specialize">
         <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <ComputerName>{2}</ComputerName>
+            <TimeZone>{9}</TimeZone>
+        </component>
+        <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <SystemLocale>en-GB</SystemLocale>
+            <UILanguage>en-GB</UILanguage>
+            <UILanguageFallback>en-GB</UILanguageFallback>
+            <UserLocale>en-GB</UserLocale>
         </component>
     </settings>
 </unattend>
@@ -264,11 +276,18 @@
         } # if
 
 
+        ## Get time zone and locale from local system if specified
+        if ($matchTimeZone) {
+            Write-Verbose ("Matching time zone to local system.")
+            $timeZone = (Get-TimeZone).id
+        } # if
+
+
         ## Inject values to template.
         Write-Verbose ("Processing template values.")
 
         try {
-            $xmlTemp = $xmlTemp -f $imageIndex, $productKey, $computerName, $adminCredential.UserName, $adminCredential.GetNetworkCredential().Password, $ip, $maskLength, $gateway, $dns
+            $xmlTemp = $xmlTemp -f $imageIndex, $productKey, $computerName, $adminCredential.UserName, $adminCredential.GetNetworkCredential().Password, $ip, $maskLength, $gateway, $dns, $timeZone
             Write-Verbose ("Completed.")
         } # try
         catch {
